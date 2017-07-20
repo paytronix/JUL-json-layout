@@ -1,3 +1,12 @@
+# NOTE - This repo has been edited for Paytronix logging
+The repo was forked from https://github.com/SYNAXON/logstash-util-formatter, and the source file has been edited. This means that some field names have been changed or removed, and some of the functionality claimed below in this README may not be valid. Changes were made to standardize the format to be consistent with another logging library, and features/fields were removed in order to improve performance.
+
+To build a jar file to use as a dependency in the server code, run:
+
+```mvn package```
+
+The jar file will be located in the target directory.
+
 # Java Util Logging JSON encoder for Logstash
 
 ## Include as a dependency
