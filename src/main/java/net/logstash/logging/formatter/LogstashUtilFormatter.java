@@ -25,9 +25,14 @@ import java.util.logging.Formatter;
 import java.util.logging.LogRecord;
 
 import javax.json.Json;
+import javax.json.JsonObject;
 import javax.json.JsonArrayBuilder;
 import javax.json.JsonBuilderFactory;
 import javax.json.JsonObjectBuilder;
+
+import java.util.TimeZone;
+import org.apache.commons.lang.time.FastDateFormat;
+
 
 /**
  *
@@ -40,7 +45,11 @@ public class LogstashUtilFormatter extends Formatter {
     private static final String[] tags = System.getProperty(
             "net.logstash.logging.formatter.LogstashUtilFormatter.tags", "UNKNOWN").split(",");
 
-    static final String DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSZZ";
+    static final FastDateFormat ISO_DATETIME_TIME_ZONE_FORMAT_WITH_MILLIS = FastDateFormat.getInstance("yyyy-MM-dd HH:mm:ss.SSS");
+
+    static String dateFormat(long timestamp) {
+        return ISO_DATETIME_TIME_ZONE_FORMAT_WITH_MILLIS.format(timestamp);
+    }
 
     static {
         try {
@@ -52,23 +61,20 @@ public class LogstashUtilFormatter extends Formatter {
 
     @Override
     public final String format(final LogRecord record) {
-        final SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT);
-        final String dateString = dateFormat.format(new Date(record.getMillis()));
-        final JsonArrayBuilder tagsBuilder = BUILDER.createArrayBuilder();
-        for (final String tag : tags) {
-            tagsBuilder.add(tag);
-        }
+        final String container = tags[0];
+        JsonObject empty_json = BUILDER.createObjectBuilder().build();
 
-        return BUILDER
-                .createObjectBuilder()
-                .add("@timestamp", dateString)
-                .add("@message", formatMessage(record))
-                .add("@source", record.getLoggerName())
-                .add("@source_host", hostName)
-                .add("@fields", encodeFields(record))
-                .add("@tags", tagsBuilder.build())
-                .build()
-                .toString() + "\n";
+        JsonObjectBuilder builder = BUILDER.createObjectBuilder();
+        builder.add("thread_name", Thread.currentThread().getName());
+        builder.add("message", formatMessage(record));
+        builder.add("timestamp", dateFormat(record.getMillis()));
+        builder.add("level", record.getLevel().toString());
+        builder.add("mdc", empty_json);
+        builder.add("container", container);
+        builder.add("logger_name", record.getLoggerName());
+        builder.add("source_host", hostName);
+        addThrowableInfo(record, builder);
+        return builder.build().toString() + "\n";
     }
 
     @Override
@@ -84,23 +90,6 @@ public class LogstashUtilFormatter extends Formatter {
         }
 
         return message;
-    }
-
-    /**
-     * Enocde all addtional fields.
-     *
-     * @param record the log record
-     * @return objectBuilder
-     */
-    final JsonObjectBuilder encodeFields(final LogRecord record) {
-        JsonObjectBuilder builder = BUILDER.createObjectBuilder();
-        builder.add("timestamp", record.getMillis());
-        builder.add("level", record.getLevel().toString());
-        builder.add("line_number", getLineNumber(record));
-        addSourceClassName(record, builder);
-        addSourceMethodName(record, builder);
-        addThrowableInfo(record, builder);
-        return builder;
     }
 
     /**
@@ -121,54 +110,6 @@ public class LogstashUtilFormatter extends Formatter {
             }
             addStacktraceElements(record, builder);
         }
-    }
-
-    /**
-     * Get the line number of the exception.
-     *
-     * @param record the logrecord
-     * @return the line number
-     */
-    final int getLineNumber(final LogRecord record) {
-        final int lineNumber;
-        if (record.getThrown() != null) {
-            lineNumber = getLineNumberFromStackTrace(
-                    record.getThrown().getStackTrace());
-        } else {
-            lineNumber = 0;
-        }
-        return lineNumber;
-    }
-
-    /**
-     * Gets line number from stack trace.
-     * @param traces all stack trace elements
-     * @return line number of the first stacktrace.
-     */
-    final int getLineNumberFromStackTrace(final StackTraceElement[] traces) {
-        final int lineNumber;
-        if (traces.length > 0 && traces[0] != null) {
-            lineNumber = traces[0].getLineNumber();
-        } else {
-            lineNumber = 0;
-        }
-        return lineNumber;
-    }
-
-    final void addValue(final JsonObjectBuilder builder, final String key, final String value) {
-        if (value != null) {
-            builder.add(key, value);
-        } else {
-            builder.add(key, "null");
-        }
-    }
-
-    private void addSourceMethodName(final LogRecord record, final JsonObjectBuilder builder) {
-        addValue(builder, "method", record.getSourceMethodName());
-    }
-
-    private void addSourceClassName(final LogRecord record, final JsonObjectBuilder builder) {
-        addValue(builder, "class", record.getSourceClassName());
     }
 
     private void addStacktraceElements(final LogRecord record, final JsonObjectBuilder builder) {
